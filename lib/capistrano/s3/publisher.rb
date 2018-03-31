@@ -21,7 +21,7 @@ module Capistrano
             path = self.base_file_path(deployment_path_absolute, file)
             path.gsub!(/^\//, "") # Remove preceding slash for S3
 
-            self.put_object(s3, bucket, target_path, path, file, only_gzip, extra_options)
+            self.put_object(s3, bucket, target_path, path, file, only_gzip, extra_options, invalidations)
           end
         end
 
@@ -127,32 +127,40 @@ module Capistrano
           File.mtime(file) < Time.parse(last_publish_time)
         end
 
-        def self.put_object(s3, bucket, target_path, path, file, only_gzip, extra_options)
-          base_name = File.basename(file)
-          mime_type = mime_type_for_file(base_name)
-          options   = {
-            :bucket => bucket,
-            :key    => self.add_prefix(path, prefix: target_path),
-            :body   => open(file),
-            :acl    => 'public-read',
-          }
+        def self.put_object(s3, bucket, target_path, path, file, only_gzip, extra_options, invalidations)
+          o = Aws::S3::Object.new(bucket, path)
+          s3_size = o.exists? ? o.content_length : 0
+          local_file_size = File.size(file)
+          if s3_size != local_file_size
+            invalidations.push(self.add_prefix(path, prefix: target_path))
+            base_name = File.basename(file)
+            mime_type = mime_type_for_file(base_name)
+            options   = {
+              :bucket => bucket,
+              :key    => self.add_prefix(path, prefix: target_path),
+              :body   => open(file),
+              :acl    => 'public-read',
+            }
 
-          options.merge!(build_redirect_hash(path, extra_options[:redirect]))
-          options.merge!(extra_options[:write] || {})
+            options.merge!(build_redirect_hash(path, extra_options[:redirect]))
+            options.merge!(extra_options[:write] || {})
 
-          if mime_type
-            options.merge!(build_content_type_hash(mime_type))
+            if mime_type
+              options.merge!(build_content_type_hash(mime_type))
 
-            if mime_type.sub_type == "gzip"
-              options.merge!(build_gzip_content_encoding_hash)
-              options.merge!(build_gzip_content_type_hash(file, mime_type))
+              if mime_type.sub_type == "gzip"
+                options.merge!(build_gzip_content_encoding_hash)
+                options.merge!(build_gzip_content_type_hash(file, mime_type))
 
-              # upload as original file name
-              options.merge!(key: self.add_prefix(self.orig_name(path), prefix: target_path)) if only_gzip
+                # upload as original file name
+                options.merge!(key: self.add_prefix(self.orig_name(path), prefix: target_path)) if only_gzip
+              end
             end
-          end
 
-          s3.put_object(options)
+            s3.put_object(options)
+          else
+            Aws.config[:logger].info "File #{file} hasn't changed"
+          end
         end
 
         def self.build_redirect_hash(path, redirect_options)

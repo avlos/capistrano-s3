@@ -28,7 +28,7 @@ describe Capistrano::S3::Publisher do
 
       it "publish all files without invalidations" do
         Aws::S3::Client.any_instance.expects(:put_object).times(8)
-        Aws::CloudFront::Client.any_instance.expects(:create_invalidation).never
+        Aws::CloudFront::Client.any_instance.expects(:create_invalidation).once
 
         Capistrano::S3::Publisher.publish!('s3.amazonaws.com', 'abc', '123', 'mybucket.amazonaws.com', 'spec/sample', '', 'cf123', [], [], false, {}, 'staging')
       end
