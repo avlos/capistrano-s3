@@ -103,7 +103,7 @@ module Capistrano
         end
 
         def self.last_published
-          if File.exists? LAST_PUBLISHED_FILE
+          if File.exist? LAST_PUBLISHED_FILE
             YAML.load_file(LAST_PUBLISHED_FILE) || {}
           else
             {}
